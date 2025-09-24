@@ -1,0 +1,148 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mcp-seed-loader
+  namespace: mcp-registry
+  labels:
+    app: mcp-registry
+    component: seed-loader
+spec:
+  template:
+    metadata:
+      labels:
+        app: mcp-registry
+        component: seed-loader
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: seed-loader
+        image: curlimages/curl:latest
+        command: ['/bin/sh']
+        args:
+        - -c
+        - |
+          echo "Starting MCP Registry seed loading job..."
+          
+          # Wait for registry service to be healthy (direct access on port 8080)
+          echo "Waiting for MCP Registry to be ready..."
+          until curl -f http://mcp-registry:8080/v0/health 2>/dev/null; do
+            echo "Registry not ready, waiting..."
+            sleep 3
+          done
+          echo "Registry is healthy!"
+          
+          # Get anonymous authentication token
+          echo "Obtaining anonymous authentication token..."
+          TOKEN_RESPONSE=$(curl -s -X POST http://mcp-registry:8080/v0/auth/none)
+          
+          if echo "$TOKEN_RESPONSE" | grep -q "registry_token"; then
+            JWT_TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o '"registry_token":"[^"]*"' | cut -d'"' -f4)
+            echo "Successfully obtained authentication token"
+          else
+            echo "Failed to obtain authentication token. Response: $TOKEN_RESPONSE"
+            exit 1
+          fi
+          
+          # Verify seed data exists and get count
+          if [ ! -f /seed-data/seed.json ]; then
+            echo "ERROR: No seed data found at /seed-data/seed.json"
+            echo "The ConfigMap should contain the sample seed.json data"
+            exit 1
+          fi
+          
+          # Parse and load servers from the sample seed data
+          echo "Processing sample seed data..."
+          TOTAL_SERVERS=$(grep -c '"name":' /seed-data/seed.json)
+          echo "Found $TOTAL_SERVERS servers to load from sample data"
+          
+          if [ "$TOTAL_SERVERS" -eq 0 ]; then
+            echo "ERROR: No servers found in seed data"
+            exit 1
+          fi
+          
+          SUCCESS_COUNT=0
+          FAIL_COUNT=0
+          
+          # Load servers from actual seed data using simple JSON parsing
+          echo "Loading servers into registry using anonymous authentication..."
+          echo "Processing $TOTAL_SERVERS servers from sample data..."
+          
+          # Extract server names and create simplified entries
+          SERVER_NAMES=$(grep '"name":' /seed-data/seed.json | sed 's/.*"name": *"\([^"]*\)".*/\1/')
+          
+          i=1
+          echo "$SERVER_NAMES" | while read -r server_name; do
+            if [ -z "$server_name" ]; then
+              continue
+            fi
+            
+            echo "Loading server $i: $server_name"
+            
+            # Create a simplified server definition for demo purposes
+            echo "{" > /tmp/server-$i.json
+            echo "  \"name\": \"$server_name\"," >> /tmp/server-$i.json
+            echo "  \"description\": \"Demo server loaded from seed data\"," >> /tmp/server-$i.json
+            echo "  \"status\": \"active\"," >> /tmp/server-$i.json
+            echo "  \"version\": \"1.0.0-seed\"," >> /tmp/server-$i.json
+            echo "  \"packages\": [" >> /tmp/server-$i.json
+            echo "    {" >> /tmp/server-$i.json
+            echo "      \"version\": \"1.0.0\"," >> /tmp/server-$i.json
+            echo "      \"registryType\": \"npm\"," >> /tmp/server-$i.json
+            echo "      \"identifier\": \"@demo/$(echo $server_name | sed 's/.*\///')\"," >> /tmp/server-$i.json
+            echo "      \"transport\": {" >> /tmp/server-$i.json
+            echo "        \"type\": \"stdio\"" >> /tmp/server-$i.json
+            echo "      }" >> /tmp/server-$i.json
+            echo "    }" >> /tmp/server-$i.json
+            echo "  ]" >> /tmp/server-$i.json
+            echo "}" >> /tmp/server-$i.json
+            
+            RESPONSE=$(curl -s -w "%{http_code}" -X POST http://mcp-registry:8080/v0/publish \
+              -H "Authorization: Bearer $JWT_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d @/tmp/server-$i.json)
+            
+            HTTP_CODE=$(echo "$RESPONSE" | tail -c 4)
+            RESPONSE_BODY=$(echo "$RESPONSE" | head -c -4)
+            
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+              echo "✓ Successfully loaded: $server_name"
+              SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+            else
+              echo "✗ Failed to load: $server_name - HTTP $HTTP_CODE"
+              echo "Response: $RESPONSE_BODY"
+              FAIL_COUNT=$((FAIL_COUNT + 1))
+            fi
+            
+            # Brief pause between requests
+            sleep 1
+            i=$((i + 1))
+            
+            # Limit to first 5 servers for demo
+            if [ $i -gt 5 ]; then
+              echo "Demo limit reached (5 servers). Stopping here."
+              break
+            fi
+          done
+          
+          echo ""
+          echo "Seed loading job completed!"
+          echo "Summary: $SUCCESS_COUNT successful, $FAIL_COUNT failed"
+          echo "Note: This job loads a sample set from the seed data for demonstration."
+        volumeMounts:
+        - name: seed-data
+          mountPath: /seed-data
+          readOnly: true
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+      volumes:
+      - name: seed-data
+        configMap:
+          name: mcp-seed-data
+  backoffLimit: 3
+  activeDeadlineSeconds: 600  # 10 minutes timeout

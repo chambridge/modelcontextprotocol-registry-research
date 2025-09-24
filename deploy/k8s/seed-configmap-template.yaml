@@ -1,0 +1,22 @@
+# This is a template file. The setup.sh script will create the actual
+# mcp-seed-data ConfigMap using this template and the real seed.json content
+#
+# Command used by setup.sh:
+# kubectl create configmap mcp-seed-data \
+#   --from-file=seed.json=mcp-registry/data/seed.json \
+#   --namespace=mcp-registry \
+#   --dry-run=client -o yaml > /tmp/seed-configmap.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-seed-data
+  namespace: mcp-registry
+  labels:
+    component: seed-data
+    managed-by: setup-script
+data:
+  # The actual seed.json content (893 servers) will be populated here
+  # by the setup.sh script from mcp-registry/data/seed.json
+  seed.json: |
+    # Placeholder - real content added by setup.sh

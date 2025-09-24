@@ -30,3 +30,24 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Cloned repositories for research
+mcp-registry/
+toolhive-research/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Generated files
+deploy/sample-seed.json
+
+.claude/
