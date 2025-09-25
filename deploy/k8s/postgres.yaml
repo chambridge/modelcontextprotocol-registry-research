@@ -44,7 +44,8 @@ spec:
     spec:
       containers:
       - name: postgres
-        image: postgres:16-alpine
+        image: quay.io/enterprisedb/postgresql:16
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5432
         env:

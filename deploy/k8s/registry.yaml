@@ -37,7 +37,7 @@ spec:
       # Init container to wait for database
       initContainers:
       - name: wait-for-postgres
-        image: postgres:16-alpine
+        image: quay.io/enterprisedb/postgresql:16
         command: ['sh', '-c']
         args:
         - |

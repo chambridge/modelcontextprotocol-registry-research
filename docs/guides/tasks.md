@@ -207,6 +207,7 @@ kind delete cluster --name mcp-registry
 - **Nginx container crashes**: Review nginx configuration syntax
 - **Seed job fails**: Verify registry health and ConfigMap data
 - **Port conflicts**: Change Kind port mappings in kind-config.yaml
+- **Docker Hub authentication errors**: See "Docker Image Fallback" below
 
 ### Diagnostic Commands
 ```bash
@@ -219,6 +220,29 @@ kubectl logs <pod-name> -c <container-name> -n mcp-registry
 
 # Test internal connectivity
 kubectl exec -it deployment/mcp-registry -c registry -n mcp-registry -- curl localhost:8080/v0/health
+```
+
+### Docker Image Fallback
+
+If you encounter Docker Hub authentication errors (ImagePullBackOff), build the required images locally:
+
+**For nginx:alpine image issues:**
+```bash
+# Build nginx image locally with the same tag
+docker build -f deploy/nginx.dockerfile -t nginx:alpine --load deploy/
+kind load docker-image nginx:alpine --name mcp-registry
+
+# Then retry deployment
+kubectl delete deployment mcp-registry -n mcp-registry
+kubectl apply -f deploy/k8s/registry.yaml
+```
+
+**For postgres image issues:**
+```bash
+# The deployment already uses quay.io/enterprisedb/postgresql:16
+# which should work without authentication. If issues persist:
+docker pull quay.io/enterprisedb/postgresql:16
+kind load docker-image quay.io/enterprisedb/postgresql:16 --name mcp-registry
 ```
 
 ## Next Steps
